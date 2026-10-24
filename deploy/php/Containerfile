@@ -1,0 +1,14 @@
+# PHP-FPM runtime for Statamic (code is NOT copied: the pod mounts the project at /srv/app).
+# Build: deploy/podman/cms.sh build  → localhost/cms-php:latest
+FROM docker.io/library/php:8.4-fpm-alpine
+
+# Same extensions the app uses on the Mac: DB, Statamic (intl, gd/exif for Glide images, zip), queue (pcntl).
+COPY --from=docker.io/mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
+RUN install-php-extensions pdo_mysql intl gd exif zip bcmath pcntl opcache \
+    && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
+COPY php.ini /usr/local/etc/php/conf.d/zz-cms.ini
+COPY fpm-pool.conf /usr/local/etc/php-fpm.d/zz-cms.conf
+
+WORKDIR /srv/app
+EXPOSE 9000

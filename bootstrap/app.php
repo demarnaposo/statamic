@@ -12,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Produksi: edge (Caddy) → nginx → FPM; skema/host/IP asli dari X-Forwarded-*. Kosong = tidak ada proxy dipercaya.
+        if ($proxies = env('TRUSTED_PROXIES')) {
+            $middleware->trustProxies(at: $proxies === '*' ? '*' : array_map('trim', explode(',', $proxies)));
+        }
+
         // Hanya route portal (guard `customer`); CP Statamic punya middleware auth sendiri.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->routeIs('portal.*') ? route('portal.login') : null);
         $middleware->redirectUsersTo(fn (Request $request) => $request->routeIs('portal.*') ? route('portal.dashboard') : '/');

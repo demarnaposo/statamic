@@ -1,8 +1,9 @@
 *.log
 .DS_Store
 .env
-.env.backup
-.env.production
+.env.*
+!.env.example
+!.env.production.example
 .phpactor.json
 .phpunit.result.cache
 /.codex
@@ -29,3 +30,6 @@ Homestead.yaml
 Thumbs.db
 # User flat-file Statamic (berisi password_hash); admin disimpan di DB (eloquent)
 /users/*.yaml
+# Arsip lokal (backup proyek, dump)
+*.tgz
+/storage/app/backups

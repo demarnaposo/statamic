@@ -1,0 +1,53 @@
+# Edge: the only service with public ports. Automatic HTTPS (Let's Encrypt) for the three domains,
+# HTTP → HTTPS redirect, security headers, compression, optional IP allowlist for the admin domain.
+# Values come from the container env ({$VAR}), see .env.production.example.
+#   CADDY_SCHEME=http:// → plain HTTP without certificates (local test only, compose.local-test.yaml).
+{
+	email {$ACME_EMAIL}
+	admin 127.0.0.1:2019
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+		-X-Powered-By
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$CADDY_SCHEME}{$LANDING_DOMAIN} {
+	import common
+	header X-Frame-Options "SAMEORIGIN"
+	reverse_proxy landing:8080
+}
+
+{$CADDY_SCHEME}{$APP_DOMAIN} {
+	import common
+	header X-Frame-Options "SAMEORIGIN"
+	reverse_proxy platform-web:8080
+}
+
+{$CADDY_SCHEME}{$ADMIN_DOMAIN} {
+	import common
+	header X-Frame-Options "SAMEORIGIN"
+	header X-Robots-Tag "noindex, nofollow"
+
+	# ADMIN_ALLOWED_IPS: space-separated IPs/CIDRs. Default = everyone (rely on CP login + 2FA).
+	@denied not remote_ip {$ADMIN_ALLOWED_IPS:0.0.0.0/0 ::/0}
+	respond @denied "Forbidden" 403
+
+	reverse_proxy platform-web:8080
+}
+
+# Any other Host on port 80 (IP scans, stale DNS): 404 instead of an empty 200.
+:80 {
+	respond "Not found" 404
+}

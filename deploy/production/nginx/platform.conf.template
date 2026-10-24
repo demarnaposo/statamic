@@ -1,0 +1,61 @@
+# platform-web: nginx in front of the two PHP-FPM pools (rendered from env by the nginx image entrypoint).
+#   ${APP_DOMAIN}   → ${APP_FPM}   portal + API (CP_ENABLED=false). Also the default server: internal
+#                                  callers (landing-builder → http://platform-web:8080/api/v1) land here.
+#   ${ADMIN_DOMAIN} → ${ADMIN_FPM} Statamic CP (CP_ENABLED=true).
+# TLS, HSTS, compression and the admin IP allowlist live in the edge (Caddy).
+
+server_tokens off;
+charset utf-8;
+client_max_body_size 64m;
+absolute_redirect off;
+
+# Real client IP for the access log: the edge (Caddy) sits on a private network.
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+real_ip_header X-Forwarded-For;
+
+# FPM hosts are re-resolved through the container DNS (from /etc/resolv.conf, set by the image entrypoint)
+# so a restarted app/admin container with a new IP is picked up without restarting nginx.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+map $uri $static_cache {
+    default                    "public, max-age=3600";
+    ~^/(build|vendor)/         "public, max-age=31536000, immutable";
+}
+
+server {
+    listen 8080 default_server;
+    server_name ${APP_DOMAIN};
+    root /srv/app/public;
+    index index.php;
+
+    location = / { return 302 /portal; }
+
+    location ~ ^/index\.php(/|$) {
+        set $fpm ${APP_FPM};
+        fastcgi_pass $fpm;
+        include /etc/nginx/snippets/platform-fastcgi.inc;
+    }
+
+    # After the index.php location: regex locations match in order, and the snippet blocks other *.php.
+    include /etc/nginx/snippets/platform-common.inc;
+}
+
+server {
+    listen 8080;
+    server_name ${ADMIN_DOMAIN};
+    root /srv/app/public;
+    index index.php;
+
+    location = / { return 302 /cp; }
+
+    location ~ ^/index\.php(/|$) {
+        set $fpm ${ADMIN_FPM};
+        fastcgi_pass $fpm;
+        include /etc/nginx/snippets/platform-fastcgi.inc;
+    }
+
+    # After the index.php location: regex locations match in order, and the snippet blocks other *.php.
+    include /etc/nginx/snippets/platform-common.inc;
+}
