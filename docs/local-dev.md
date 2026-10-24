@@ -1,33 +1,30 @@
-# Menjalankan stack lokal (Podman)
+# Menjalankan lokal (native di Mac)
+
+Statamic dan Astro berjalan langsung di Mac. Hanya database dan email yang memakai container Podman
+(`mariadb-dev` di port 3307, `mailpit` di 1025/8025).
 
 ```bash
-# sekali: /etc/hosts
-echo "127.0.0.1 landing.test cms.test" | sudo tee -a /etc/hosts
-
-deploy/dev-stack.sh up       # mariadb-dev + mailpit → pod cms → pod landing → proxy edge → deploy hook Astro
-deploy/dev-stack.sh status   # status container + cek HTTP
-deploy/dev-stack.sh down     # matikan pod & hook (mariadb-dev dan mailpit tetap jalan)
+deploy/dev-stack.sh up       # mariadb-dev + mailpit → php artisan serve → queue:work → astro dev → deploy hook
+deploy/dev-stack.sh status   # status proses + cek HTTP
+deploy/dev-stack.sh down     # hentikan proses dev (DB & mailpit tetap jalan)
 ```
 
-| Alamat | Isi | Akses langsung |
-|---|---|---|
-| http://landing.test | Landing Astro statis (`astro/dist`) | 127.0.0.1:8081 |
-| http://cms.test/cp | Statamic Control Panel | 127.0.0.1:8000 |
-| http://cms.test/api/v1 | API katalog untuk Astro | 127.0.0.1:8000 |
-| http://cms.test/portal | Portal customer | 127.0.0.1:8000 |
-| http://localhost:8025 | Mailpit (email lokal) | — |
+Log ada di `/tmp/sertifika-dev/` (`serve.log`, `queue.log`, `astro.log`, `hook.log`).
 
-## Routing
-Port 80 dipegang pod **`edge`** (`deploy/edge/`: `edge.conf`, `edge-pod.yaml`, `edge.sh up|down|reload|logs`).
-Ia meneruskan request berdasarkan header `Host` ke pod `landing` dan `cms` lewat DNS network `network-dev`,
-meniru load balancer/CDN di production. Host lain mendapat 404.
+| Alamat | Isi |
+|---|---|
+| http://localhost:4321 | Landing Astro (dev server, konten selalu terbaru) |
+| http://localhost:8000/cp | Statamic Control Panel |
+| http://localhost:8000/api/v1 | API katalog untuk Astro |
+| http://localhost:8000/portal | Portal customer |
+| http://localhost:8025 | Mailpit (email lokal) |
 
-## Rebuild landing saat konten berubah
-Simpan konten di CP → listener Catalog → job di container `cms-queue` (debounce 60 detik) →
-`POST http://host.containers.internal:4322/rebuild` → receiver Astro (`bun run hook:landing`, dijalankan oleh
-`dev-stack.sh up`) → `astro build` dengan `SITE_URL=http://landing.test` → `dist/` diganti → tampil di landing.test.
-Log receiver: `/tmp/astro-deploy-hook.log`. Total ±1,5 menit.
+Kebutuhan: PHP 8.3+ dan Composer, Bun (`~/.bun/bin/bun`), Podman untuk DB/mailpit.
+Aset portal (Vue): `npm run dev` (HMR) atau `npm run build` di folder ini.
 
-## Produksi
-Stack produksi (Docker Compose: Caddy, nginx, FPM app/admin, queue, scheduler, MariaDB, Redis, landing builder)
-dan cara mengujinya di Mac berdampingan dengan stack ini: [`deployment.md`](./deployment.md).
+## Rebuild landing statis
+`astro dev` selalu membaca konten terbaru. Untuk mencoba alur production (build statis + deploy hook):
+simpan konten di CP → job `queue:work` (debounce 60 detik) → `POST http://127.0.0.1:4322/rebuild` →
+receiver (`bun run hook`) menjalankan `astro build` → `dist/`; lihat hasilnya dengan `bun run preview` (port 4323).
+
+Stack production (Docker Compose di server) ada di [`deployment.md`](./deployment.md).

@@ -139,10 +139,9 @@ memuat kode sekali di awal. Di server, jalankan worker lewat supervisor/systemd.
 Catatan Laravel 13: cache menolak unserialize objek kecuali di-whitelist. Provider modul
 menambahkan kelas DTO ke `cache.serializable_classes` (sama seperti yang dilakukan Statamic).
 
-## Menjalankan dengan Podman
+## Menjalankan lokal
 
-Pod lokal gaya production (nginx + PHP-FPM + queue worker, kode di-mount): lihat
-[`podman.md`](./podman.md) → http://cms.test:8000.
+Lihat [`local-dev.md`](./local-dev.md) (native di Mac: `deploy/dev-stack.sh up`).
 
 ## Environment
 

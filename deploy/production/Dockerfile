@@ -8,7 +8,7 @@
 #   docker build -f deploy/production/Dockerfile --target app -t sertifika/platform:TAG .
 #   docker build -f deploy/production/Dockerfile --target web -t sertifika/platform-web:TAG .
 
-# ---- PHP runtime: same extensions as deploy/php/Containerfile + redis ----
+# ---- PHP runtime: PHP extensions for Statamic + redis ----
 FROM docker.io/library/php:8.4-fpm-alpine AS php-base
 COPY --from=docker.io/mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
 RUN install-php-extensions pdo_mysql intl gd exif zip bcmath pcntl opcache redis \
