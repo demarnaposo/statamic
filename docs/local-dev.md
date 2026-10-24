@@ -26,5 +26,3 @@ Aset portal (Vue): `npm run dev` (HMR) atau `npm run build` di folder ini.
 `astro dev` selalu membaca konten terbaru. Untuk mencoba alur production (build statis + deploy hook):
 simpan konten di CP → job `queue:work` (debounce 60 detik) → `POST http://127.0.0.1:4322/rebuild` →
 receiver (`bun run hook`) menjalankan `astro build` → `dist/`; lihat hasilnya dengan `bun run preview` (port 4323).
-
-Stack production (Docker Compose di server) ada di [`deployment.md`](./deployment.md).
