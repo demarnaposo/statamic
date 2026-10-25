@@ -4,8 +4,9 @@ namespace Modules\Catalog\Install;
 
 /**
  * Pembaruan blueprint yang aman (tanpa --force): hanya menambahkan field bawaan yang
- * belum ada. Field, urutan, dan konfigurasi hasil edit admin di CP tidak disentuh,
- * kecuali teks bawaan lama yang tercantum di $stale (diganti hanya jika belum diubah admin).
+ * belum ada DAN belum pernah dipasang (field yang dihapus admin tidak dipasang ulang).
+ * Field, urutan, dan konfigurasi hasil edit admin di CP tidak disentuh, kecuali teks
+ * bawaan lama yang tercantum di $stale (diganti hanya jika belum diubah admin).
  */
 final class BlueprintMerger
 {
@@ -13,18 +14,21 @@ final class BlueprintMerger
      * @param  array  $current  isi blueprint yang tersimpan
      * @param  array  $defaults  isi blueprint bawaan modul
      * @param  array<string, array<string, array{0: string, 1: string}>>  $stale  handle => [config key => [teks lama, teks baru]]
+     * @param  list<string>|null  $installed  handle bawaan yang pernah dipasang; null = belum pernah dicatat
+     *                                        (semua field bawaan yang tidak ada dianggap dihapus admin)
      * @return array{0: array, 1: list<string>} [isi baru, daftar perubahan]
      */
-    public static function merge(array $current, array $defaults, array $stale = []): array
+    public static function merge(array $current, array $defaults, array $stale = [], ?array $installed = null): array
     {
         $existing = self::handles($current);
+        $skip = array_merge($existing, $installed ?? self::handles($defaults));
         $changes = [];
 
         foreach ($defaults['tabs'] ?? [] as $tabHandle => $tab) {
             foreach ($tab['sections'] ?? [] as $section) {
                 $missing = array_values(array_filter(
                     $section['fields'] ?? [],
-                    fn ($f) => isset($f['handle']) && ! in_array($f['handle'], $existing, true),
+                    fn ($f) => isset($f['handle']) && ! in_array($f['handle'], $skip, true),
                 ));
 
                 if ($missing === []) {
@@ -44,7 +48,7 @@ final class BlueprintMerger
                 unset($sections);
 
                 foreach ($missing as $field) {
-                    $existing[] = $field['handle'];
+                    $skip[] = $field['handle'];
                     $changes[] = "+{$field['handle']}";
                 }
             }
@@ -67,7 +71,7 @@ final class BlueprintMerger
     }
 
     /** @return list<string> handle field tingkat atas di semua tab/section */
-    private static function handles(array $contents): array
+    public static function handles(array $contents): array
     {
         $handles = [];
         foreach ($contents['tabs'] ?? [] as $tab) {

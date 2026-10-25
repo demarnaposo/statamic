@@ -73,6 +73,8 @@ final class CatalogServiceProvider extends ServiceProvider
 
         Event::subscribe(ContentChangedSubscriber::class);
 
+        $this->loadMigrationsFrom(__DIR__.'/Database/Migrations');
+
         if ($this->app->runningInConsole()) {
             $this->commands([InstallCommand::class]);
         }

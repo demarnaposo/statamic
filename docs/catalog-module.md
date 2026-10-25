@@ -1,7 +1,7 @@
 # Modul Catalog & Assessment
 
 Backend API katalog sertifikasi untuk frontend Astro. Bentuk JSON & endpoint mengikuti
-[`api-contract.md`](./api-contract.md) **v1.2** (sumber kebenaran). Portal customer & modul Identity: [`identity-portal.md`](./identity-portal.md).
+[`api-contract.md`](./api-contract.md) **v1.3** (sumber kebenaran). Portal customer & modul Identity: [`identity-portal.md`](./identity-portal.md).
 
 ## Struktur
 
@@ -10,7 +10,7 @@ modules/
 ├── Catalog/                         namespace Modules\Catalog
 │   ├── CatalogServiceProvider.php   binding, rate limiter, route api/v1, listener, command
 │   ├── config.php                   di-merge sebagai config('catalog')
-│   ├── routes.php                   /site, /categories, /programs, /programs/{slug}, /availability, /batches/{id}, /testimonials, /faqs
+│   ├── routes.php                   /site, /categories, /programs, /programs/{slug}, /availability, /prices, /batches/{id}, /testimonials, /faqs
 │   ├── Contracts/                   ← SATU-SATUNYA bagian yang boleh dipakai modul lain
 │   │   ├── CatalogQuery.php         baca katalog (hanya published)
 │   │   ├── SeatInventory.php        kursi terisi per batch (default NullSeatInventory = 0)
@@ -25,6 +25,7 @@ modules/
 │   ├── Http/Controllers, Http/Resources
 │   ├── Listeners/ContentChangedSubscriber.php
 │   ├── Jobs/TriggerAstroDeploy.php
+│   ├── Database/Migrations/         catalog_installed_fields (field bawaan yang pernah dipasang)
 │   ├── Install/                     blueprint + data demo (CatalogContentInstaller, BlueprintMerger, DemoCatalog)
 │   └── Console/InstallCommand.php   php artisan catalog:install
 └── Assessment/                      namespace Modules\Assessment (hanya memakai Modules\Catalog\Contracts)
@@ -61,15 +62,18 @@ Idempoten: menjalankan ulang tidak menduplikasi data dan tidak menimpa perubahan
 (kecuali `--force`). Deploy hook tidak dipicu selama install; cache di-reset sekali di akhir.
 
 **Upgrade blueprint yang aman** (tanpa `--force`): `BlueprintMerger` hanya *menambahkan* field
-bawaan yang belum ada (ke tab/section bawaan yang sama, atau section baru di akhir tab). Field,
-label, urutan, dan field tambahan buatan admin tidak disentuh; entry/global tidak disentuh sama
-sekali. Teks petunjuk bawaan lama yang sudah tidak berlaku (`STALE_DEFAULTS`, mis. petunjuk
-`promo_until`) diganti hanya jika isinya masih persis teks lama. Output menampilkan perubahan,
-mis. `globals.site digabung: +logo, +default_og_image`.
+bawaan yang belum ada **dan belum pernah dipasang** (ke tab/section bawaan yang sama, atau section
+baru di akhir tab). Field bawaan yang pernah dipasang dicatat per blueprint di tabel
+`catalog_installed_fields`, sehingga field yang sengaja **dihapus** admin di CP tidak muncul lagi;
+field yang benar-benar baru di versi kode berikutnya ditambahkan sekali. Saat pencatatan pertama kali
+berjalan pada blueprint yang sudah ada, semua field bawaan dianggap sudah dipasang (yang tidak ada =
+dihapus admin, tidak ditambahkan). Field, label, urutan, dan field tambahan buatan admin tidak
+disentuh; entry/global tidak disentuh sama sekali. Teks petunjuk bawaan lama yang sudah tidak berlaku
+(`STALE_DEFAULTS`, mis. petunjuk `promo_until`) diganti hanya jika isinya masih persis teks lama.
+Output menampilkan perubahan, mis. `globals.site digabung: +logo, +default_og_image`.
 
-> ⚠️ Karena merger menambahkan field yang "hilang", field bawaan yang sengaja **dihapus** admin
-> di CP akan muncul lagi saat `catalog:install` dijalankan. Sembunyikan field (visibility hidden)
-> alih-alih menghapusnya.
+`php artisan catalog:install --dry-run` menjalankan proses yang sama di dalam transaksi DB lalu
+rollback: output = perubahan yang akan terjadi, tanpa menyimpan apa pun.
 
 Upgrade ke v1.1 di server yang sudah berisi konten:
 
@@ -133,7 +137,7 @@ php artisan queue:retry all             # ulangi
 
 Setelah mengubah kode modul, restart worker (`php artisan queue:restart`) karena worker
 memuat kode sekali di awal. Di server, jalankan worker lewat supervisor/systemd.
-4. Endpoint runtime `programs/{slug}/availability`, `batches/{id}`, dan `assessment/score` tidak di-cache server
+4. Endpoint runtime `programs/{slug}/availability`, `prices`, `batches/{id}`, dan `assessment/score` tidak di-cache server
    dan selalu mengirim `Cache-Control: no-store, private` (termasuk respons 404/422).
 
 Catatan Laravel 13: cache menolak unserialize objek kecuali di-whitelist. Provider modul
@@ -165,7 +169,8 @@ Test memakai sqlite in-memory (phpunit.xml) + `RefreshDatabase`; migrasi eloquen
 berjalan normal di sqlite. Fixture dibuat lewat `catalog:install` + facade Statamic, dengan
 waktu dibekukan ke 2026-10-24 (Asia/Jakarta). Debounce diuji dengan `Queue::fake()` +
 `queue.default=database` (banyak simpan → satu job tertunda); upgrade blueprint diuji di
-`InstallCommandTest` (field baru masuk, edit admin & konten tetap).
+`InstallCommandTest` (field baru masuk sekali, field yang dihapus admin tidak kembali, edit admin &
+konten tetap, `--dry-run` tidak menyimpan).
 
 ## Integrasi modul lain (Commerce)
 

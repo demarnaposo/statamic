@@ -1,4 +1,4 @@
-# Kontrak API Catalog v1.2 (Statamic/Laravel → Astro)
+# Kontrak API Catalog v1.3 (Statamic/Laravel → Astro)
 
 Sumber kebenaran bersama untuk backend (`statamic/app`) dan frontend (`astro`).
 Perubahan kontrak harus diperbarui di kedua repo.
@@ -9,7 +9,7 @@ Perubahan kontrak harus diperbarui di kedua repo.
 - Uang: **integer Rupiah, sudah termasuk PPN**. Tanggal: `YYYY-MM-DD`. Datetime: ISO 8601.
 - API read-only kecuali `POST /assessment/score`. Hanya entry **published** yang dikembalikan.
 - Field dikembalikan secara eksplisit (whitelist), bukan dump blueprint Statamic.
-- Endpoint build-time boleh di-cache di server (invalidasi saat konten disimpan). Endpoint runtime (`availability`, `assessment/score`) tidak di-cache oleh CDN (`Cache-Control: no-store`).
+- Endpoint build-time boleh di-cache di server (invalidasi saat konten disimpan). Endpoint runtime (`availability`, `prices`, `batches/{id}`, `assessment/score`) tidak di-cache oleh CDN (`Cache-Control: no-store`).
 - CORS: origin dari env `CORS_ALLOWED_ORIGINS` (lokal: `http://localhost:4321`).
 
 ## Tipe
@@ -99,6 +99,16 @@ type BatchDetail = BatchSummary & {
   program: ProgramSummary;
 };
 
+// v1.3: GET /prices (runtime, satu request per halaman untuk semua kartu harga)
+type Price = {
+  price: number;
+  promo_price: number | null;
+  promo_until: string | null;
+  promo_active: boolean;
+  effective_price: number;
+};
+type Prices = Record<string, Price>;   // key = slug program published
+
 type AssessmentResult = {
   version: number;
   scores: { category: Category; score: number }[];   // urut skor tertinggi
@@ -117,6 +127,7 @@ type AssessmentResult = {
 | GET | `/programs?category=&issuer=&featured=1` | `ProgramSummary[]` | build |
 | GET | `/programs/{slug}` | `ProgramDetail` (404 jika tidak ada) | build |
 | GET | `/programs/{slug}/availability` | `Availability` | **runtime (browser)** |
+| GET | `/prices?slugs=a,b` | `Prices` (v1.3; `slugs` opsional, slug tak dikenal diabaikan; kosong = `{}`) | **runtime (browser)** |
 | GET | `/batches/{id}` | `BatchDetail` (404 jika tidak ada/tidak published) | **runtime (browser)** |
 | GET | `/testimonials` | `Testimonial[]` | build |
 | GET | `/faqs` | `Faq[]` (FAQ umum, `program_slug = null`) | build |
@@ -143,7 +154,15 @@ Scoring assessment: setiap opsi terhubung ke satu kategori; tiap jawaban menamba
   Token yang sudah diklaim (oleh siapa pun) atau tidak dikenal diabaikan tanpa error.
 - Token jangan dicatat ke analytics/log; simpan paling lama selama sesi browser (mis. `sessionStorage`).
 
+## Harga runtime untuk kartu (v1.3)
+- Harga di respons build-time (`/programs`, `ProgramSummary` dalam `AssessmentResult`) bisa tertinggal sampai rebuild
+  (admin ubah harga/promo, promo kedaluwarsa). Astro menghidrasi semua kartu harga di satu halaman dengan **satu**
+  `GET /prices` saat halaman dibuka; harga build tetap tampil bila request gagal.
+- Nilai dihitung dengan aturan yang sama seperti `/availability` dan `/batches/{id}`, sehingga kartu, detail, dan
+  checkout-preview selalu menampilkan harga yang sama.
+
 ## Changelog
+- **v1.3** (2026-10-25): aditif — endpoint runtime `GET /prices` (harga terkini semua program published, opsional `?slugs=`). Field lain tidak berubah.
 - **v1.2** (2026-10-24): aditif — `AssessmentResult.attempt_token`; attempt assessment disimpan server-side untuk klaim ke akun portal (`/portal/assessment/claim?token=`). Field lain tidak berubah.
 - **v1.1** (2026-10-24): `ProgramSummary.promo_active`; `Availability.price/promo_price/promo_until`; `Site.seo`; endpoint `GET /batches/{id}`; promo tanpa `promo_until` = aktif; dokumentasi urutan, 404, 422.
 - **v1** (2026-10-24): rilis awal.

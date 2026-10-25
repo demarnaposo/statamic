@@ -199,6 +199,30 @@ class CatalogApiTest extends TestCase
         $this->assertStringContainsString('no-store', $this->getJson('/api/v1/programs/tidak-ada/availability')->headers->get('Cache-Control'));
     }
 
+    public function test_prices_are_runtime_for_all_published_programs(): void
+    {
+        $this->standardCatalog();
+
+        $response = $this->getJson('/api/v1/prices')->assertOk();
+
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        $data = $response->json('data');
+        $this->assertEqualsCanonicalizing(['promo-aktif', 'promo-lewat'], array_keys($data), 'draft tidak ikut');
+        $this->assertSame(['price' => 7500000, 'promo_price' => 6000000, 'promo_until' => '2026-11-15', 'promo_active' => true, 'effective_price' => 6000000], $data['promo-aktif']);
+        $this->assertSame([false, 3000000], [$data['promo-lewat']['promo_active'], $data['promo-lewat']['effective_price']]);
+
+        // Sama dengan availability (satu sumber logika) dan langsung mengikuti perubahan tanpa cache.
+        $program = Entry::query()->where('collection', 'programs')->where('slug', 'promo-aktif')->first();
+        $program->set('promo_until', '2026-10-23')->save();
+        $fresh = $this->getJson('/api/v1/prices?slugs=promo-aktif,tidak-ada')->json('data');
+        $availability = $this->getJson('/api/v1/programs/promo-aktif/availability')->json('data');
+        $this->assertSame(['promo-aktif'], array_keys($fresh));
+        $this->assertSame([false, 7500000], [$fresh['promo-aktif']['promo_active'], $fresh['promo-aktif']['effective_price']]);
+        $this->assertSame($availability['effective_price'], $fresh['promo-aktif']['effective_price']);
+
+        $this->getJson('/api/v1/prices?slugs=tidak-ada')->assertOk()->assertExactJson(['data' => []]);
+    }
+
     public function test_batch_detail_is_runtime_with_program_and_seats(): void
     {
         $this->standardCatalog();

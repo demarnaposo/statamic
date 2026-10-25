@@ -3,6 +3,7 @@
 namespace Modules\Catalog\Install;
 
 use Illuminate\Console\OutputStyle;
+use Illuminate\Support\Facades\DB;
 use Modules\Catalog\Contracts\ContentInstaller;
 use Statamic\Facades\Blueprint;
 use Statamic\Facades\Collection;
@@ -153,22 +154,27 @@ final class CatalogContentInstaller implements ContentInstaller
 
     private function blueprint(string $namespace, string $handle, array $contents, OutputStyle $output, bool $force): void
     {
-        $existing = Blueprint::find($namespace.'.'.$handle);
+        $key = $namespace.'.'.$handle;
+        $existing = Blueprint::find($key);
         if ($existing && ! $force) {
-            [$merged, $changes] = BlueprintMerger::merge($existing->contents(), $contents, self::STALE_DEFAULTS);
+            $installed = DB::table('catalog_installed_fields')->where('blueprint', $key)->pluck('handle')->all();
+            [$merged, $changes] = BlueprintMerger::merge($existing->contents(), $contents, self::STALE_DEFAULTS, $installed ?: null);
             if ($changes !== []) {
                 $existing->setContents($merged)->save();
-                $output->writeln("  • Blueprint <info>{$namespace}.{$handle}</info> digabung: ".implode(', ', $changes));
+                $output->writeln("  • Blueprint <info>{$key}</info> digabung: ".implode(', ', $changes));
             }
+        } else {
+            ($existing ?? Blueprint::make($handle)->setNamespace($namespace))
+                ->setContents($contents)
+                ->save();
 
-            return;
+            $output->writeln("  • Blueprint <info>{$key}</info> ".($existing ? 'diperbarui' : 'dibuat'));
         }
 
-        ($existing ?? Blueprint::make($handle)->setNamespace($namespace))
-            ->setContents($contents)
-            ->save();
-
-        $output->writeln("  • Blueprint <info>{$namespace}.{$handle}</info> ".($existing ? 'diperbarui' : 'dibuat'));
+        DB::table('catalog_installed_fields')->insertOrIgnore(array_map(
+            fn (string $field) => ['blueprint' => $key, 'handle' => $field, 'created_at' => now()],
+            BlueprintMerger::handles($contents),
+        ));
     }
 
     private function categoryBlueprint(): array

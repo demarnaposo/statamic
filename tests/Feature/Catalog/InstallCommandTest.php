@@ -4,6 +4,7 @@ namespace Tests\Feature\Catalog;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Statamic\Facades\Blueprint;
 use Statamic\Facades\Entry;
 use Statamic\Facades\GlobalSet;
@@ -46,6 +47,8 @@ class InstallCommandTest extends TestCase
         $contents['tabs']['main']['sections'][0]['fields'][0]['field']['display'] = 'Nama Brand (admin)';
         $contents['tabs']['main']['sections'][0]['fields'][] = ['handle' => 'custom_admin', 'field' => ['type' => 'text', 'display' => 'Custom']];
         $site->setContents($contents)->save();
+        // Field SEO belum ada di kode versi sebelumnya → belum pernah dipasang.
+        $this->forgetInstalled('globals.site', ['logo', 'default_og_image']);
 
         $program = Blueprint::find('collections.programs.program');
         $contents = $program->contents();
@@ -76,5 +79,82 @@ class InstallCommandTest extends TestCase
         $this->getJson('/api/v1/site')->assertOk()
             ->assertJsonPath('data.name', 'Nama Edit Admin')
             ->assertJsonPath('data.seo', ['default_og_image_url' => null, 'logo_url' => null]);
+    }
+
+    public function test_fields_deleted_by_admin_are_not_reinstalled_and_new_fields_are_added_once(): void
+    {
+        $this->artisan('catalog:install')->assertSuccessful();
+
+        $this->removeField('collections.programs.program', 'level');
+        $this->artisan('catalog:install')->assertSuccessful();
+        $this->assertFalse($this->hasField('collections.programs.program', 'level'), 'field yang dihapus admin tidak muncul lagi');
+
+        // Field baru di kode (belum tercatat) → ditambahkan sekali; dihapus admin → tidak kembali.
+        $this->removeField('globals.site', 'logo');
+        $this->forgetInstalled('globals.site', ['logo']);
+        $this->artisan('catalog:install')->expectsOutputToContain('globals.site digabung: +logo')->assertSuccessful();
+        $this->assertTrue($this->hasField('globals.site', 'logo'));
+
+        $this->removeField('globals.site', 'logo');
+        $this->artisan('catalog:install')->doesntExpectOutputToContain('+logo')->assertSuccessful();
+        $this->assertFalse($this->hasField('globals.site', 'logo'));
+    }
+
+    public function test_first_run_on_existing_blueprint_treats_missing_default_fields_as_deleted(): void
+    {
+        $this->artisan('catalog:install')->assertSuccessful();
+        $this->removeField('collections.programs.program', 'level');
+        DB::table('catalog_installed_fields')->delete(); // instalasi lama sebelum fitur pencatatan
+
+        $this->artisan('catalog:install')->doesntExpectOutputToContain('+level')->assertSuccessful();
+
+        $this->assertFalse($this->hasField('collections.programs.program', 'level'));
+        $this->assertTrue(DB::table('catalog_installed_fields')->where(['blueprint' => 'collections.programs.program', 'handle' => 'level'])->exists());
+        $this->assertTrue(DB::table('catalog_installed_fields')->where(['blueprint' => 'collections.programs.program', 'handle' => 'price'])->exists());
+    }
+
+    public function test_dry_run_reports_changes_without_saving(): void
+    {
+        $this->artisan('catalog:install')->assertSuccessful();
+        $this->removeField('globals.site', 'logo');
+        $this->removeField('globals.site', 'tagline');
+        $this->forgetInstalled('globals.site', ['logo']);
+
+        $this->artisan('catalog:install', ['--dry-run' => true])
+            ->expectsOutputToContain('globals.site digabung: +logo')
+            ->doesntExpectOutputToContain('+tagline')
+            ->assertSuccessful();
+
+        $this->assertFalse($this->hasField('globals.site', 'logo'), 'dry-run tidak menyimpan blueprint');
+        $this->assertFalse(DB::table('catalog_installed_fields')->where(['blueprint' => 'globals.site', 'handle' => 'logo'])->exists());
+
+        $this->artisan('catalog:install')->expectsOutputToContain('globals.site digabung: +logo')->assertSuccessful();
+        $this->assertTrue($this->hasField('globals.site', 'logo'));
+    }
+
+    private function removeField(string $blueprint, string $handle): void
+    {
+        $bp = Blueprint::find($blueprint);
+        $contents = $bp->contents();
+        foreach ($contents['tabs'] as $t => $tab) {
+            foreach ($tab['sections'] as $s => $section) {
+                $contents['tabs'][$t]['sections'][$s]['fields'] = array_values(array_filter(
+                    $section['fields'] ?? [],
+                    fn ($f) => ($f['handle'] ?? null) !== $handle,
+                ));
+            }
+        }
+        $bp->setContents($contents)->save();
+    }
+
+    private function hasField(string $blueprint, string $handle): bool
+    {
+        return Blueprint::find($blueprint)->fields()->all()->has($handle);
+    }
+
+    /** @param  list<string>  $handles */
+    private function forgetInstalled(string $blueprint, array $handles): void
+    {
+        DB::table('catalog_installed_fields')->where('blueprint', $blueprint)->whereIn('handle', $handles)->delete();
     }
 }
