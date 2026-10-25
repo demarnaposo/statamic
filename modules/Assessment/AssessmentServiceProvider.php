@@ -4,6 +4,7 @@ namespace Modules\Assessment;
 
 use App\Support\PortalRoutes;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Event;
@@ -13,6 +14,7 @@ use Illuminate\Support\ServiceProvider;
 use Modules\Assessment\Application\AssessmentDefinition;
 use Modules\Assessment\Application\AttemptStore;
 use Modules\Assessment\Contracts\AssessmentResults;
+use Modules\Assessment\Domain\AssessmentAttempt;
 use Modules\Assessment\Http\Middleware\CapturePendingClaim;
 use Modules\Assessment\Install\AssessmentContentInstaller;
 use Modules\Assessment\Listeners\ClaimPendingAssessment;
@@ -24,6 +26,7 @@ final class AssessmentServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->mergeConfigFrom(__DIR__.'/config.php', 'assessment');
         $this->app->tag([AssessmentContentInstaller::class], 'catalog.content-installers');
         $this->app->bind(AssessmentResults::class, AttemptStore::class);
 
@@ -45,6 +48,10 @@ final class AssessmentServiceProvider extends ServiceProvider
             ->group(__DIR__.'/routes.php');
 
         $this->loadMigrationsFrom(__DIR__.'/Database/Migrations');
+
+        // model:prune default hanya memindai app/Models, jadi model modul disebut eksplisit.
+        $this->callAfterResolving(Schedule::class, fn (Schedule $schedule) => $schedule
+            ->command('model:prune', ['--model' => [AssessmentAttempt::class]])->daily());
 
         // Klaim hasil anonim ke akun: ?assessment=<token> di URL portal + saat login/daftar.
         $this->app->make(Router::class)->pushMiddlewareToGroup('portal', CapturePendingClaim::class);

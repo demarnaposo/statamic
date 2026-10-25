@@ -33,3 +33,6 @@ Thumbs.db
 # Arsip lokal (backup proyek, dump)
 *.tgz
 /storage/app/backups
+# Upload container aset Statamic (`assets` → public/assets); file tetap di disk/server, bukan di git
+/public/assets/*
+!/public/assets/.gitkeep

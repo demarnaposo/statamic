@@ -62,7 +62,11 @@ dependensi runtime pada "kerangka portal", tanpa import kode.
   route `portal-login` (20/menit/IP). Register 5/menit/IP. Lupa/reset sandi 5/menit/IP dan 3/menit/email.
   Kirim ulang & tautan verifikasi 6/menit/customer.
 - Lupa sandi selalu menampilkan pesan yang sama (tidak membocorkan email terdaftar).
-- `url.intended` hanya dipakai bila mengarah ke portal (dipakai bersama CP).
+- Session portal terpisah dari CP: untuk request portal (prefix `PORTAL_PREFIX` dan/atau host `PORTAL_DOMAIN`)
+  middleware global `App\Http\Middleware\PortalSessionCookie` (sebelum `StartSession`) memakai cookie
+  `<app>-portal-session` dengan path `/<prefix>`; `XSRF-TOKEN` portal ikut ber-path `/<prefix>`. Logout portal
+  (`session()->invalidate()`) tidak mengeluarkan admin CP di host yang sama.
+- `url.intended` hanya dipakai bila mengarah ke portal.
 - CSRF: cookie `XSRF-TOKEN` Laravel dibaca otomatis oleh klien HTTP Inertia.
 - Props Inertia bersama (`auth.customer`) hanya berisi nama, email, status verifikasi. NPWP & alamat penagihan
   hanya dikirim di halaman Profil. NPWP terenkripsi di DB (`APP_KEY`; jangan ganti tanpa re-enkripsi).
@@ -116,7 +120,8 @@ Landing Astro memakai `PUBLIC_APP_URL` + `/checkout`, `/register`: lokal set `PU
 |---|---|---|
 | `LANDING_URL` | `http://localhost:4321` | Landing Astro (tautan katalog, halaman program `/program/{slug}`, assessment). |
 | `PORTAL_DOMAIN` | kosong | Jika diisi (mis. `app.sertifika.id`), semua route portal dibatasi ke domain itu (`Route::domain`). |
-| `PORTAL_PREFIX` | `portal` | Prefix path portal. Boleh dikosongkan bila memakai `PORTAL_DOMAIN`. |
+| `PORTAL_PREFIX` | `portal` | Prefix path portal. Boleh dikosongkan bila memakai `PORTAL_DOMAIN`. Juga path cookie session portal. |
+| `ASSESSMENT_ANON_RETENTION_DAYS` | `30` | Attempt assessment anonim yang tidak diklaim dihapus setelah N hari (`model:prune` harian). |
 | `MAIL_*` | Mailpit lokal | `MAIL_MAILER=smtp`, `MAIL_HOST=127.0.0.1`, `MAIL_PORT=1025`, `MAIL_FROM_ADDRESS=no-reply@sertifika.test`, `MAIL_FROM_NAME=Sertifika`. |
 
 ## Menjalankan lokal
@@ -133,7 +138,7 @@ php artisan queue:work --tries=5           # restart setelah kode berubah: php a
 php artisan test
 ```
 
-Email verifikasi & reset dikirim **sinkron** (tanpa queue) agar alur auth tidak bergantung pada worker.
+Email verifikasi & reset dikirim lewat **queue** (`ShouldQueue`); butuh `queue:work` (lihat [`local-dev.md`](./local-dev.md)).
 Saat `npm run dev` berjalan, file `public/hot` membuat `@vite` memakai dev server; CP tidak terpengaruh
 karena asetnya dari `public/vendor/statamic/cp`.
 
@@ -145,8 +150,9 @@ karena asetnya dari `public/vendor/statamic/cp`.
 - Di service/container publik untuk portal, set `CP_ENABLED=false` agar `/cp` tidak terekspos; CP dijalankan di
   service internal/terpisah dengan DB yang sama.
 - `CORS_ALLOWED_ORIGINS` tetap untuk `api/*` saja (portal bukan API lintas origin).
-- Jadwalkan pembersihan attempt anonim yang tidak pernah diklaim (belum ada; lihat "belum selesai").
-- Pakai mailer transaksional (SES/Postmark/dll.) dan pertimbangkan antrean untuk notifikasi.
+- Jalankan scheduler (`php artisan schedule:run` tiap menit via cron, atau `schedule:work`): `model:prune` harian
+  menghapus attempt anonim yang tidak diklaim > `ASSESSMENT_ANON_RETENTION_DAYS` hari (default 30).
+- Pakai mailer transaksional (SES/Postmark/dll.); worker `queue:work` wajib jalan untuk email portal.
 
 ## Test
 
@@ -158,4 +164,4 @@ Mencakup register, login sukses/gagal/throttle, intended URL, verifikasi email (
 reset sandi, profil (NPWP terenkripsi, hanya di props profil, ganti email → verifikasi ulang), ganti sandi,
 isolasi guard (customer → `/cp` ditolak, login & dashboard CP tetap 200, admin bukan customer), klaim assessment
 (anonim → register, `?assessment=` saat login, token dipakai ulang tidak berpindah pemilik), checkout placeholder,
-dan batas modul.
+cookie session portal terpisah dari CP (prefix & `PORTAL_DOMAIN`), prune attempt anonim, dan batas modul.

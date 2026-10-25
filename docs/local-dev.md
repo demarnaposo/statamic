@@ -4,12 +4,16 @@ Statamic dan Astro berjalan langsung di Mac. Hanya database dan email yang memak
 (`mariadb-dev` di port 3307, `mailpit` di 1025/8025).
 
 ```bash
-deploy/dev-stack.sh up       # mariadb-dev + mailpit → php artisan serve → queue:work → astro dev → deploy hook
+deploy/dev-stack.sh up       # mariadb-dev + mailpit → php artisan serve → queue:work → schedule:work → astro dev → deploy hook
 deploy/dev-stack.sh status   # status proses + cek HTTP
 deploy/dev-stack.sh down     # hentikan proses dev (DB & mailpit tetap jalan)
 ```
 
-Log ada di `/tmp/sertifika-dev/` (`serve.log`, `queue.log`, `astro.log`, `hook.log`).
+Log ada di `/tmp/sertifika-dev/` (`serve.log`, `queue.log`, `schedule.log`, `astro.log`, `hook.log`).
+
+`queue:work` mengirim email portal (verifikasi, reset sandi) dan deploy hook; `schedule:work` menjalankan
+jadwal (mis. `model:prune` harian untuk attempt assessment anonim). Setelah mengubah kode: `php artisan queue:restart`
+lalu `deploy/dev-stack.sh up` (worker dijalankan ulang bila mati).
 
 | Alamat | Isi |
 |---|---|

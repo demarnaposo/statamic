@@ -2,14 +2,18 @@
 
 namespace Modules\Identity\Notifications;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
 use Modules\Identity\Domain\Customer;
 
-final class VerifyEmailNotification extends Notification
+final class VerifyEmailNotification extends Notification implements ShouldQueue
 {
+    use Queueable;
+
     public const EXPIRE_MINUTES = 60;
 
     public function via(object $notifiable): array

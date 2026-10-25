@@ -2,7 +2,9 @@
 
 namespace Modules\Assessment\Domain;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -19,7 +21,7 @@ use Illuminate\Support\Carbon;
  */
 class AssessmentAttempt extends Model
 {
-    use HasUlids;
+    use HasUlids, MassPrunable;
 
     protected $fillable = ['token_hash', 'version', 'answers', 'scores', 'recommended_category'];
 
@@ -33,5 +35,12 @@ class AssessmentAttempt extends Model
             'scores' => 'array',
             'claimed_at' => 'datetime',
         ];
+    }
+
+    /** Attempt anonim yang tidak pernah diklaim, lebih tua dari masa retensi. */
+    public function prunable(): Builder
+    {
+        return static::whereNull('customer_id')
+            ->where('created_at', '<', now()->subDays(config('assessment.anon_retention_days')));
     }
 }

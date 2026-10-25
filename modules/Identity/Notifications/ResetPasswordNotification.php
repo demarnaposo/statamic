@@ -2,12 +2,16 @@
 
 namespace Modules\Identity\Notifications;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Modules\Identity\Domain\Customer;
 
-final class ResetPasswordNotification extends Notification
+final class ResetPasswordNotification extends Notification implements ShouldQueue
 {
+    use Queueable;
+
     public function __construct(public readonly string $token) {}
 
     public function via(object $notifiable): array
