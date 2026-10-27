@@ -1,7 +1,7 @@
 # Modul Catalog & Assessment
 
 Backend API katalog sertifikasi untuk frontend Astro. Bentuk JSON & endpoint mengikuti
-[`api-contract.md`](./api-contract.md) **v1.3** (sumber kebenaran). Portal customer & modul Identity: [`identity-portal.md`](./identity-portal.md).
+[`api-contract.md`](./api-contract.md) **v1.4** (sumber kebenaran). Portal customer (akun, attempt & klaim assessment, panel admin) ada di aplikasi terpisah `../portal` (lihat `portal/README.md`).
 
 ## Struktur
 
@@ -29,7 +29,7 @@ modules/
 │   ├── Install/                     blueprint + data demo (CatalogContentInstaller, BlueprintMerger, DemoCatalog)
 │   └── Console/InstallCommand.php   php artisan catalog:install
 └── Assessment/                      namespace Modules\Assessment (hanya memakai Modules\Catalog\Contracts)
-    ├── routes.php                   GET /assessment, POST /assessment/score
+    ├── routes.php                   GET /assessment, POST /internal/assessment/score (portal, Bearer token)
     ├── Application/                 AssessmentRepository (global "assessment"), AssessmentScorer
     ├── Http/                        controller + ScoreAssessmentRequest (validasi 422)
     └── Install/                     blueprint global "assessment" + 7 pertanyaan demo
@@ -137,7 +137,7 @@ php artisan queue:retry all             # ulangi
 
 Setelah mengubah kode modul, restart worker (`php artisan queue:restart`) karena worker
 memuat kode sekali di awal. Di server, jalankan worker lewat supervisor/systemd.
-4. Endpoint runtime `programs/{slug}/availability`, `prices`, `batches/{id}`, dan `assessment/score` tidak di-cache server
+4. Endpoint runtime `programs/{slug}/availability`, `prices`, `batches/{id}`, dan `internal/assessment/score` tidak di-cache server
    dan selalu mengirim `Cache-Control: no-store, private` (termasuk respons 404/422).
 
 Catatan Laravel 13: cache menolak unserialize objek kecuali di-whitelist. Provider modul

@@ -42,12 +42,6 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
-
-        // Customer portal (modules/Identity). Terpisah dari guard `web` milik admin Statamic.
-        'customer' => [
-            'driver' => 'session',
-            'provider' => 'customers',
-        ],
     ],
 
     /*
@@ -75,11 +69,6 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
-        ],
-
-        'customers' => [
-            'driver' => 'eloquent',
-            'model' => Modules\Identity\Domain\Customer::class,
         ],
 
         // 'users' => [
@@ -111,13 +100,6 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
-            'throttle' => 60,
-        ],
-
-        'customers' => [
-            'provider' => 'customers',
-            'table' => 'customer_password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

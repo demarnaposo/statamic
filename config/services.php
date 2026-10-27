@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    // Aplikasi portal customer (repo terpisah): token layanan untuk POST /api/v1/internal/assessment/score.
+    'portal' => [
+        'token' => env('PORTAL_SERVICE_TOKEN'),
+    ],
+
 ];

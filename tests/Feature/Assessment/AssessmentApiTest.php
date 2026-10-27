@@ -3,6 +3,7 @@
 namespace Tests\Feature\Assessment;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Statamic\Facades\GlobalSet;
 use Tests\Feature\Catalog\CatalogFixtures;
 use Tests\TestCase;
@@ -11,10 +12,15 @@ class AssessmentApiTest extends TestCase
 {
     use CatalogFixtures, RefreshDatabase;
 
+    private const SCORE = '/api/v1/internal/assessment/score';
+
+    private const TOKEN = 'token-layanan-portal';
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->setUpCatalog();
+        config(['services.portal.token' => self::TOKEN]);
 
         $this->category('pm', 'Manajemen Proyek', 1);
         $this->category('sec', 'Keamanan', 2);
@@ -59,14 +65,14 @@ class AssessmentApiTest extends TestCase
 
     public function test_score_recommends_highest_category_with_featured_first(): void
     {
-        $response = $this->postJson('/api/v1/assessment/score', ['answers' => ['q1' => 'q1a', 'q2' => 'q2a', 'q3' => 'q3a']])
+        $response = $this->score(['answers' => ['q1' => 'q1a', 'q2' => 'q2a', 'q3' => 'q3a']])
             ->assertOk();
 
         $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
         $data = $response->json('data');
 
-        $this->assertSame(['version', 'scores', 'recommended_category', 'recommendations', 'attempt_token'], array_keys($data));
-        $this->assertMatchesRegularExpression('/^[A-Za-z0-9]{48}$/', $data['attempt_token']);
+        // Tanpa attempt_token: attempt disimpan oleh portal.
+        $this->assertSame(['version', 'scores', 'recommended_category', 'recommendations'], array_keys($data));
         $this->assertSame(3, $data['version']);
         $this->assertSame([['pm', 2], ['sec', 1], ['data', 0]], array_map(fn ($s) => [$s['category']['slug'], $s['score']], $data['scores']));
         $this->assertSame(['slug' => 'pm', 'title' => 'Manajemen Proyek', 'description' => 'Deskripsi Manajemen Proyek'], $data['recommended_category']);
@@ -77,7 +83,7 @@ class AssessmentApiTest extends TestCase
     public function test_tie_is_broken_by_category_order(): void
     {
         // pm 1, sec 1, data 1 → seri, kategori pertama (pm) menang.
-        $data = $this->postJson('/api/v1/assessment/score', ['answers' => ['q1' => 'q1a', 'q2' => 'q2b', 'q3' => 'q3b']])
+        $data = $this->score(['answers' => ['q1' => 'q1a', 'q2' => 'q2b', 'q3' => 'q3b']])
             ->assertOk()->json('data');
 
         $this->assertSame('pm', $data['recommended_category']['slug']);
@@ -86,12 +92,12 @@ class AssessmentApiTest extends TestCase
 
     public function test_incomplete_answers_return_422(): void
     {
-        $this->postJson('/api/v1/assessment/score', ['answers' => ['q1' => 'q1a']])
+        $this->score(['answers' => ['q1' => 'q1a']])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['answers.q2', 'answers.q3'])
             ->assertHeader('Cache-Control', 'no-store, private');
 
-        $this->postJson('/api/v1/assessment/score', [])
+        $this->score([])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['answers']);
     }
@@ -99,12 +105,46 @@ class AssessmentApiTest extends TestCase
     public function test_invalid_or_unknown_options_return_422(): void
     {
         // Opsi milik pertanyaan lain tidak valid.
-        $this->postJson('/api/v1/assessment/score', ['answers' => ['q1' => 'q2a', 'q2' => 'q2a', 'q3' => 'q3a']])
+        $this->score(['answers' => ['q1' => 'q2a', 'q2' => 'q2a', 'q3' => 'q3a']])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['answers.q1']);
 
-        $this->postJson('/api/v1/assessment/score', ['answers' => ['q1' => 'q1a', 'q2' => 'q2a', 'q3' => 'q3a', 'q99' => 'x']])
+        $this->score(['answers' => ['q1' => 'q1a', 'q2' => 'q2a', 'q3' => 'q3a', 'q99' => 'x']])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['answers.q99']);
+    }
+
+    public function test_internal_score_requires_service_token(): void
+    {
+        $answers = ['answers' => ['q1' => 'q1a', 'q2' => 'q2a', 'q3' => 'q3a']];
+
+        $this->postJson(self::SCORE, $answers)->assertUnauthorized();
+        $this->postJson(self::SCORE, $answers, ['Authorization' => 'Bearer salah'])->assertUnauthorized();
+
+        // Token server kosong = endpoint mati, termasuk untuk bearer kosong.
+        config(['services.portal.token' => '']);
+        $this->postJson(self::SCORE, $answers, ['Authorization' => 'Bearer '])->assertUnauthorized();
+    }
+
+    public function test_internal_score_has_no_cors_and_public_score_is_gone(): void
+    {
+        $origin = ['Origin' => 'http://localhost:4321'];
+
+        $this->score(['answers' => ['q1' => 'q1a', 'q2' => 'q2a', 'q3' => 'q3a']], $origin)
+            ->assertOk()
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+        $this->options(self::SCORE, [], $origin + ['Access-Control-Request-Method' => 'POST'])
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+
+        // CORS tetap untuk API publik landing.
+        $this->getJson('/api/v1/assessment', $origin)->assertHeader('Access-Control-Allow-Origin', 'http://localhost:4321');
+
+        // Scoring publik pindah ke portal.
+        $this->postJson('/api/v1/assessment/score', ['answers' => []])->assertNotFound();
+    }
+
+    private function score(array $body, array $headers = []): TestResponse
+    {
+        return $this->postJson(self::SCORE, $body, ['Authorization' => 'Bearer '.self::TOKEN] + $headers);
     }
 }

@@ -1,30 +1,37 @@
 # Menjalankan lokal (native di Mac)
 
-Statamic dan Astro berjalan langsung di Mac. Hanya database dan email yang memakai container Podman
-(`mariadb-dev` di port 3307, `mailpit` di 1025/8025).
+Tiga aplikasi berjalan langsung di Mac: **CMS** Statamic (repo ini, :8000), **portal** customer + panel admin
+(`../portal`, :8001), dan **landing** Astro (`../../astro`, :4321). Hanya database dan email yang memakai
+container Podman (`mariadb-dev` di port 3307 — database `statamic` dan `portal`, `mailpit` di 1025/8025).
 
 ```bash
-deploy/dev-stack.sh up       # mariadb-dev + mailpit → php artisan serve → queue:work → schedule:work → astro dev → deploy hook
+deploy/dev-stack.sh up       # mariadb-dev + mailpit → CMS (serve, queue, schedule) → portal (serve, queue, schedule) → astro dev → deploy hook
 deploy/dev-stack.sh status   # status proses + cek HTTP
 deploy/dev-stack.sh down     # hentikan proses dev (DB & mailpit tetap jalan)
 ```
 
-Log ada di `/tmp/sertifika-dev/` (`serve.log`, `queue.log`, `schedule.log`, `astro.log`, `hook.log`).
+Log ada di `/tmp/sertifika-dev/` (`serve.log`, `queue.log`, `schedule.log`, `portal-serve.log`, `portal-queue.log`,
+`portal-schedule.log`, `astro.log`, `hook.log`). Lokasi repo lain bisa diganti lewat env `PORTAL_DIR` / `LANDING_DIR`.
 
-`queue:work` mengirim email portal (verifikasi, reset sandi) dan deploy hook; `schedule:work` menjalankan
-jadwal (mis. `model:prune` harian untuk attempt assessment anonim). Setelah mengubah kode: `php artisan queue:restart`
-lalu `deploy/dev-stack.sh up` (worker dijalankan ulang bila mati).
+- `queue:work` CMS menjalankan deploy hook (rebuild Astro). `queue:work` **portal** mengirim email customer
+  (verifikasi, reset sandi) ke Mailpit; `schedule:work` portal menjalankan `model:prune` harian (attempt assessment
+  anonim > 30 hari).
+- Setelah mengubah kode: `php artisan queue:restart` (di repo yang bersangkutan) lalu `deploy/dev-stack.sh up`
+  (worker dijalankan ulang bila mati).
 
 | Alamat | Isi |
 |---|---|
 | http://localhost:4321 | Landing Astro (dev server, konten selalu terbaru) |
 | http://localhost:8000/cp | Statamic Control Panel |
-| http://localhost:8000/api/v1 | API katalog untuk Astro |
-| http://localhost:8000/portal | Portal customer |
+| http://localhost:8000/api/v1 | API katalog untuk Astro & portal |
+| http://localhost:8001 | Portal customer (`/login`, `/register`, `/dashboard`, `/checkout`) |
+| http://localhost:8001/admin | Panel admin portal (2FA wajib; buat admin: `php artisan admin:create email@domain` di `../portal`) |
 | http://localhost:8025 | Mailpit (email lokal) |
 
-Kebutuhan: PHP 8.3+ dan Composer, Bun (`~/.bun/bin/bun`), Podman untuk DB/mailpit.
-Aset portal (Vue): `npm run dev` (HMR) atau `npm run build` di folder ini.
+Kebutuhan: PHP 8.3+ (portal memakai 8.4) dan Composer, Bun (`~/.bun/bin/bun`), Podman untuk DB/mailpit.
+
+`PORTAL_SERVICE_TOKEN` harus sama di `.env` CMS dan `.env` portal (endpoint internal scoring assessment).
+Cookie browser tidak dipisah per port: CMS memakai cookie `statamic-session`, portal `sertifika-portal-session`.
 
 ## Rebuild landing statis
 `astro dev` selalu membaca konten terbaru. Untuk mencoba alur production (build statis + deploy hook):

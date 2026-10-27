@@ -8,8 +8,7 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
 /**
- * Aturan modular monolith: modul hanya boleh memakai `Modules\<Lain>\Contracts\…` milik modul lain,
- * dan Identity tidak boleh bergantung pada modul lain sama sekali.
+ * Aturan modular monolith: modul hanya boleh memakai `Modules\<Lain>\Contracts\…` milik modul lain.
  */
 class ModuleBoundariesTest extends TestCase
 {
@@ -59,17 +58,10 @@ class ModuleBoundariesTest extends TestCase
         $this->assertSame([], $violations, "Modul {$module} memakai internal modul lain");
     }
 
-    public function test_identity_does_not_depend_on_any_other_module(): void
-    {
-        $foreign = array_filter(self::references(), fn ($r) => $r[0] === 'Identity' && $r[2] !== 'Identity');
-
-        $this->assertSame([], array_map(fn ($r) => "{$r[1]} → Modules\\{$r[2]}\\{$r[3]}", array_values($foreign)));
-    }
-
     public function test_scanner_detects_references(): void
     {
-        $assessment = array_filter(self::references(), fn ($r) => $r[0] === 'Assessment' && $r[2] === 'Identity');
+        $assessment = array_filter(self::references(), fn ($r) => $r[0] === 'Assessment' && $r[2] === 'Catalog');
 
-        $this->assertNotEmpty($assessment, 'Assessment memakai Identity\\Contracts (sanity check scanner)');
+        $this->assertNotEmpty($assessment, 'Assessment memakai Catalog\\Contracts (sanity check scanner)');
     }
 }

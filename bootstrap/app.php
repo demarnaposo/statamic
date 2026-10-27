@@ -1,9 +1,10 @@
 <?php
 
-use App\Http\Middleware\PortalSessionCookie;
+use App\Http\Middleware\HandleCors;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\HandleCors as BaseHandleCors;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -13,10 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->prepend(PortalSessionCookie::class);
-        // Hanya route portal (guard `customer`); CP Statamic punya middleware auth sendiri.
-        $middleware->redirectGuestsTo(fn (Request $request) => $request->routeIs('portal.*') ? route('portal.login') : null);
-        $middleware->redirectUsersTo(fn (Request $request) => $request->routeIs('portal.*') ? route('portal.dashboard') : '/');
+        $middleware->replace(BaseHandleCors::class, HandleCors::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

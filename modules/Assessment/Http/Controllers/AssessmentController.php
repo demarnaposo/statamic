@@ -5,7 +5,6 @@ namespace Modules\Assessment\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Modules\Assessment\Application\AssessmentRepository;
 use Modules\Assessment\Application\AssessmentScorer;
-use Modules\Assessment\Application\AttemptStore;
 use Modules\Assessment\Http\Requests\ScoreAssessmentRequest;
 use Modules\Catalog\Contracts\Data\ProgramSummary;
 
@@ -20,7 +19,8 @@ final class AssessmentController
             : response()->json(['message' => 'Asesmen belum tersedia.'], 404);
     }
 
-    public function score(ScoreAssessmentRequest $request, AssessmentScorer $scorer, AttemptStore $attempts): JsonResponse
+    /** Internal (portal): hasil scoring tanpa menyimpan apa pun; portal menyimpan attempt & menambah attempt_token. */
+    public function score(ScoreAssessmentRequest $request, AssessmentScorer $scorer): JsonResponse
     {
         $definition = $request->definition();
         $result = $definition ? $scorer->score($definition, $request->answers()) : null;
@@ -34,8 +34,6 @@ final class AssessmentController
             'scores' => array_map(fn ($s) => ['category' => $s['category']->toArray(), 'score' => $s['score']], $result['scores']),
             'recommended_category' => $result['recommended_category']->toArray(),
             'recommendations' => array_map(fn (ProgramSummary $p) => $p->toArray(), $result['recommendations']),
-            // v1.2: token sekali-tampil untuk klaim hasil ke akun portal (/portal/assessment/claim?token=…).
-            'attempt_token' => $attempts->record($request->answers(), $result),
         ]]);
     }
 }

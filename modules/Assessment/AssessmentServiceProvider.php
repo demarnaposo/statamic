@@ -2,33 +2,23 @@
 
 namespace Modules\Assessment;
 
-use App\Support\PortalRoutes;
 use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Router;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Modules\Assessment\Application\AssessmentDefinition;
-use Modules\Assessment\Application\AttemptStore;
-use Modules\Assessment\Contracts\AssessmentResults;
-use Modules\Assessment\Domain\AssessmentAttempt;
-use Modules\Assessment\Http\Middleware\CapturePendingClaim;
 use Modules\Assessment\Install\AssessmentContentInstaller;
-use Modules\Assessment\Listeners\ClaimPendingAssessment;
-use Modules\Identity\Contracts\Events\CustomerAuthenticated;
-use Modules\Identity\Contracts\Events\CustomerRegistered;
 
-/** Bergantung pada modul Catalog & Identity hanya melalui `Contracts` masing-masing. */
+/**
+ * Konten & bobot assessment + scoring. Penyimpanan attempt dan klaim ke akun ada di aplikasi portal,
+ * yang memanggil endpoint internal scoring. Bergantung pada Catalog hanya melalui `Contracts`.
+ */
 final class AssessmentServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__.'/config.php', 'assessment');
         $this->app->tag([AssessmentContentInstaller::class], 'catalog.content-installers');
-        $this->app->bind(AssessmentResults::class, AttemptStore::class);
 
         // Lihat CatalogServiceProvider: whitelist unserialize untuk Laravel 13.
         $current = config('cache.serializable_classes');
@@ -46,16 +36,5 @@ final class AssessmentServiceProvider extends ServiceProvider
             ->middleware(['api', 'throttle:assessment-api'])
             ->name('api.v1.assessment.')
             ->group(__DIR__.'/routes.php');
-
-        $this->loadMigrationsFrom(__DIR__.'/Database/Migrations');
-
-        // model:prune default hanya memindai app/Models, jadi model modul disebut eksplisit.
-        $this->callAfterResolving(Schedule::class, fn (Schedule $schedule) => $schedule
-            ->command('model:prune', ['--model' => [AssessmentAttempt::class]])->daily());
-
-        // Klaim hasil anonim ke akun: ?assessment=<token> di URL portal + saat login/daftar.
-        $this->app->make(Router::class)->pushMiddlewareToGroup('portal', CapturePendingClaim::class);
-        Event::listen([CustomerRegistered::class, CustomerAuthenticated::class], ClaimPendingAssessment::class);
-        PortalRoutes::group(__DIR__.'/portal-routes.php');
     }
 }

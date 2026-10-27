@@ -1,16 +1,17 @@
-# Kontrak API Catalog v1.3 (Statamic/Laravel → Astro)
+# Kontrak API Catalog v1.4 (Statamic/Laravel → Astro & portal)
 
-Sumber kebenaran bersama untuk backend (`statamic/app`) dan frontend (`astro`).
-Perubahan kontrak harus diperbarui di kedua repo.
+Sumber kebenaran bersama untuk backend (`statamic/app`), frontend (`astro`), dan aplikasi portal (`portal`, klien server-to-server).
+Perubahan kontrak harus diperbarui di semua repo. Endpoint publik milik portal (`POST /api/assessment/score`,
+`GET /api/session`) didokumentasikan di `portal/docs/api-contract.md`.
 
 ## Konvensi
 - Base URL lokal: `http://localhost:8000/api/v1`
 - Semua respons sukses: `{ "data": ... }`. Error 404: `{ "message": "..." }`. Error 422: format validasi Laravel (`{ "message", "errors": { field: [..] } }`).
 - Uang: **integer Rupiah, sudah termasuk PPN**. Tanggal: `YYYY-MM-DD`. Datetime: ISO 8601.
-- API read-only kecuali `POST /assessment/score`. Hanya entry **published** yang dikembalikan.
+- API publik read-only. Satu-satunya POST adalah endpoint internal `POST /internal/assessment/score` (khusus portal). Hanya entry **published** yang dikembalikan.
 - Field dikembalikan secara eksplisit (whitelist), bukan dump blueprint Statamic.
-- Endpoint build-time boleh di-cache di server (invalidasi saat konten disimpan). Endpoint runtime (`availability`, `prices`, `batches/{id}`, `assessment/score`) tidak di-cache oleh CDN (`Cache-Control: no-store`).
-- CORS: origin dari env `CORS_ALLOWED_ORIGINS` (lokal: `http://localhost:4321`).
+- Endpoint build-time boleh di-cache di server (invalidasi saat konten disimpan). Endpoint runtime (`availability`, `prices`, `batches/{id}`, `internal/assessment/score`) tidak di-cache oleh CDN (`Cache-Control: no-store`).
+- CORS: origin dari env `CORS_ALLOWED_ORIGINS` (lokal: `http://localhost:4321`), untuk semua `api/*` **kecuali** `api/v1/internal/*` (tanpa CORS).
 
 ## Tipe
 
@@ -109,12 +110,13 @@ type Price = {
 };
 type Prices = Record<string, Price>;   // key = slug program published
 
+// v1.4: dikembalikan CMS hanya ke portal (endpoint internal), tanpa `attempt_token`.
+// Portal meneruskannya ke browser dengan tambahan `attempt_token` (lihat portal/docs/api-contract.md).
 type AssessmentResult = {
   version: number;
   scores: { category: Category; score: number }[];   // urut skor tertinggi
   recommended_category: Category;
   recommendations: ProgramSummary[];                  // maks 3
-  attempt_token: string;  // v1.2: token acak sekali-tampil untuk klaim hasil ke akun portal (server hanya menyimpan hash-nya)
 };
 ```
 
@@ -132,7 +134,7 @@ type AssessmentResult = {
 | GET | `/testimonials` | `Testimonial[]` | build |
 | GET | `/faqs` | `Faq[]` (FAQ umum, `program_slug = null`) | build |
 | GET | `/assessment` | `Assessment` | build |
-| POST | `/assessment/score` body `{ "answers": { "<question_id>": "<option_id>" } }` | `AssessmentResult` (422 jika tidak valid/tidak lengkap) | **runtime (browser)** |
+| POST | `/internal/assessment/score` body `{ "answers": { "<question_id>": "<option_id>" } }` | `AssessmentResult` tanpa `attempt_token` (422 jika tidak valid/tidak lengkap, 401 tanpa token) | **tidak** — hanya portal (server-to-server) |
 
 `seats_taken` saat ini selalu `0` (modul Commerce belum ada); dihitung lewat interface `SeatInventory` yang nanti diimplementasikan Commerce.
 
@@ -142,17 +144,15 @@ Scoring assessment: setiap opsi terhubung ke satu kategori; tiap jawaban menamba
 - **Promo aktif** = `promo_price` terisi, lebih kecil dari `price`, dan (`promo_until` kosong **atau** `promo_until >= hari ini`, zona waktu Asia/Jakarta). Promo tanpa tanggal akhir berlaku sampai dihapus admin.
 - **Urutan default**: `/programs` → featured dulu, lalu judul A–Z. `/categories`, `/faqs`, `/testimonials` → field `sort_order`, lalu judul. Batch → `start_date` naik.
 - **404** untuk `/site` dan `/assessment` jika global belum diisi; `/programs/{slug}`, `/programs/{slug}/availability`, `/batches/{id}` jika tidak ada/tidak published.
-- **422**: filter `/programs` tidak valid; `POST /assessment/score` memakai key error `answers.<question_id>` (dan `answers` untuk error umum).
+- **422**: filter `/programs` tidak valid; `POST /internal/assessment/score` memakai key error `answers.<question_id>` (dan `answers` untuk error umum).
 - **Status batch**: `status` di endpoint build-time bisa tertinggal sampai rebuild; sumber status kursi terkini adalah `/availability` dan `/batches/{id}` (`Cache-Control: no-store`).
 
-## Klaim hasil assessment ke akun portal (v1.2)
-- Setiap `POST /assessment/score` yang valid **menyimpan attempt** (anonim) dan mengembalikan `attempt_token`.
-- Astro mengarahkan tombol "Simpan hasil" ke `{PUBLIC_APP_URL}/assessment/claim?token=<attempt_token>`
-  (lokal `PUBLIC_APP_URL=http://localhost:8000/portal`). Alternatif: tambahkan `?assessment=<attempt_token>` ke URL
-  register/login portal (`/portal/register?assessment=…`).
-- Portal menyimpan token di session; setelah customer daftar/masuk, attempt diklaim ke akun **sekali saja**.
-  Token yang sudah diklaim (oleh siapa pun) atau tidak dikenal diabaikan tanpa error.
-- Token jangan dicatat ke analytics/log; simpan paling lama selama sesi browser (mis. `sessionStorage`).
+## Scoring internal untuk portal (v1.4)
+- `POST /internal/assessment/score` wajib header `Authorization: Bearer <PORTAL_SERVICE_TOKEN>` (dibandingkan
+  constant-time; token kosong di server = endpoint menolak semua request → 401). Tanpa CORS; jangan dipanggil dari browser.
+- CMS hanya menghitung skor (bobot tetap di CMS) dan **tidak menyimpan apa pun**. Penyimpanan attempt, `attempt_token`,
+  dan klaim hasil ke akun ada di portal (`POST {portal}/api/assessment/score`, `GET {portal}/assessment/claim?token=`).
+- `GET /assessment` (pertanyaan tanpa bobot) tetap publik untuk build Astro.
 
 ## Harga runtime untuk kartu (v1.3)
 - Harga di respons build-time (`/programs`, `ProgramSummary` dalam `AssessmentResult`) bisa tertinggal sampai rebuild
@@ -162,6 +162,7 @@ Scoring assessment: setiap opsi terhubung ke satu kategori; tiap jawaban menamba
   checkout-preview selalu menampilkan harga yang sama.
 
 ## Changelog
+- **v1.4** (2026-10-27): **breaking** — `POST /assessment/score` publik dihapus dari CMS; scoring untuk browser pindah ke portal (`POST {portal}/api/assessment/score`, respons sama dengan v1.3 termasuk `attempt_token`). Baru: endpoint internal `POST /internal/assessment/score` (Bearer `PORTAL_SERVICE_TOKEN`, tanpa CORS, tanpa `attempt_token`, tidak menyimpan attempt). Tabel `customers` & `assessment_attempts` dihapus dari DB CMS.
 - **v1.3** (2026-10-25): aditif — endpoint runtime `GET /prices` (harga terkini semua program published, opsional `?slugs=`). Field lain tidak berubah.
 - **v1.2** (2026-10-24): aditif — `AssessmentResult.attempt_token`; attempt assessment disimpan server-side untuk klaim ke akun portal (`/portal/assessment/claim?token=`). Field lain tidak berubah.
 - **v1.1** (2026-10-24): `ProgramSummary.promo_active`; `Availability.price/promo_price/promo_until`; `Site.seo`; endpoint `GET /batches/{id}`; promo tanpa `promo_until` = aktif; dokumentasi urutan, 404, 422.
