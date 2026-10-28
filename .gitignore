@@ -36,3 +36,10 @@ Thumbs.db
 # Upload container aset Statamic (`assets` → public/assets); file tetap di disk/server, bukan di git
 /public/assets/*
 !/public/assets/.gitkeep
+
+# Local-only: AI tooling, deploy scripts and internal docs
+/.agents/
+/.claude/
+/skills-lock.json
+/deploy/
+/docs/
